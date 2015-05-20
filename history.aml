@@ -1,0 +1,9 @@
+val didRead = ref False
+
+advice after (| #fileOpenRead# |) (res, _, _) = 
+  ((didRead := True); res)
+
+advice before (| #netConnect, netServerAccept# |) (arg,_,_) =
+  if !didRead
+  then abort "Cannot make network connections after reading from a file\n"
+  else arg

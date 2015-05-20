@@ -1,0 +1,36 @@
+(* doPrivileged : (unit -> a) -> a *)
+(* passed a function f that is run on unit--used in the stack inspection mechanism *)
+fun doPrivileged f = f ()
+
+val currPerms:Ref List (String,List Arg) = ref (newAllPermission ("","")::Nil)
+
+fun updatePerms(st) =
+  (*  let val _ = print "inside updatePerms" in *)
+    currPerms := (case st of 
+			 ({{doPrivileged}} (_,_)::{any}(_,fi)::tail) =>
+			 getPermissions ((getFileName fi), 
+					 policyfile) 
+		       | {any} (_,fi)::tail =>
+			 intersectPermissions (!currPerms, 
+					       getPermissions ((getFileName fi), 
+							       policyfile))
+		       | _ => !currPerms)
+(*end*)
+
+val isUpdate = (fn (st) =>
+    case st of 
+	{{updatePerms}} (_,_)::tail => True
+      | {any} (_,_)::tail => isUpdate tail
+      | Nil => False)
+
+advice before (any) (arg,st,fi) =
+	      if isUpdate st
+	      then arg
+	      else ((updatePerms st);arg)
+
+fun checkStack (st, 
+		p : (String,List Arg)) : Bool =
+    impliesPermissions (!currPerms, p)
+  
+
+	 

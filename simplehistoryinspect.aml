@@ -1,0 +1,39 @@
+(* doPrivileged : (unit -> a) -> a *)
+(* passed a function f that is run on unit--used in the stack inspection mechanism *)
+fun doPrivileged f =
+      f ()
+
+val history:Ref List (String,String) = ref Nil
+
+advice before (any) (arg,st,fi) = 
+	      ((history := ((getFileName fi, getFunName fi)::(!history))); arg)
+
+(* a real implementation of history-based inspection would require 
+ me to define intersectPerm functions for all the permissions
+  this will do for now *)
+fun checkHistory (history : List (String,String), 
+		  p : (String,List Arg)):Bool =
+    case history of
+	((filename,funname)::t1) => 
+	let val _ = print (filename ^ " : ^ " ^ funname ^ " || ") in 
+	if equals (funname, "doPrivileged")
+	then (case t1 of
+		  ((filename2,funname2)::t2) => 
+		  impliesPermissions (getPermissions (filename2, 
+						      policyfile), 
+				      p)
+		| Nil => False (* Shouldn't happen *))
+	else impliesPermissions (getPermissions (filename, 
+						 policyfile),
+				 p)
+             andalso checkHistory (t1, p) end
+      | Nil => True
+	 
+(* I didn't want to have to rewrite filesecurity.aml and netsecurity.aml *)
+(* if this file is used, calls to stack inspection are overridden by the history inspection mechanism *)
+fun checkStack (st, 
+		p : (String,List Arg)) : Bool =
+    case !history of
+	(* must take checkStack and checkRead off the history *)
+	(_::_::hist) => checkHistory(hist, p)
+	 

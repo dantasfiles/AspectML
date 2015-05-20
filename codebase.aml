@@ -1,0 +1,29 @@
+(* the code that tells whether a file is in a particular codebase *)
+
+(* impliesCodeBase : string * string -> bool *)
+(* tells whether file f is in codebase cb *)
+fun impliesCodeBase (cb1:String, cb2:String):Bool =
+    (* codebase is entire directory recursively *)
+    if (isSuffix ("/-", cb1))
+    then (let
+	      val thisPath = substring (cb1, 0, (size cb1) - 1)
+	  in 
+	      isPrefix (thisPath, cb2)
+	  end)
+    (* codebase is entire directory non-recursively *)
+    else (if (isSuffix ("/*", cb1))
+	  then (let
+		    val last = lastIndexOf (cb2, "/")
+		in 
+		    if (last == ~1)
+		    then False
+		    else (let 
+			      val thisPath = substring (cb1, 0, (size cb1) - 1)
+			      val thatPath = substring (cb2, 0, last + 1)
+			  in
+			      thatPath == thisPath
+			  end)
+		end)
+	  (* codebase is single file/directory *)
+	  else (cb1 == cb2) orelse 
+		(cb2 == (cb1 ^ "/")))

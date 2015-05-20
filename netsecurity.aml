@@ -1,0 +1,57 @@
+(* fun checkListen : stack * int -> bool *)
+fun checkListen (st, port:Int):Bool = 
+    if port == 0
+    then checkStack (st, newSocketPermissionMask ("localhost:1024-", sockPermListenMask))
+    else checkStack (st, newSocketPermissionMask ("localhost:" ^ (int_to_string port), sockPermListenMask))
+
+(* fun checkAccept : stack * string * int -> bool *)
+fun checkAccept (st, host:String, port:Int):Bool = 
+    checkStack (st, newSocketPermissionMask (host ^ ":" ^ (int_to_string port), sockPermAcceptMask))
+
+(* fun checkConnect : stack * string * int -> bool *)
+fun checkConnect (st, host:String, port:Int):Bool =
+    if port == ~1
+    then checkStack (st, newSocketPermissionMask(host, sockPermResolveMask))
+    else checkStack (st, newSocketPermissionMask(host ^ ":" ^ (int_to_string port), sockPermConnectMask))
+
+fun shouldCheck (st):Bool =
+	 case st of
+	     (| #checkListen,checkAccept,checkConnect# |)(_,_)::_ => False
+	   | (|any|)(_,_)::tail => shouldCheck tail
+	   | _ => True
+
+(* CONNECT CHECKS *)
+advice around (| #netGetHostFromNameService'# |) ((addr,host), st, name) =
+		  if (shouldCheck st) andalso (not (checkConnect (st, host, ~1)))
+		  then netGetHostAddress addr 
+		  else proceed (addr, host)
+		
+advice before (| #netGetAllByName0# |) (host, st, name) =
+	      if (shouldCheck st) andalso (not (checkConnect (st, host, ~1)))
+	      then abort "Failed security check"
+	      else host
+	   
+advice around (| #netGetLocalHost'# |) (localname:String, st, name) =
+		   if checkConnect (st, localname, ~1)
+		   then proceed localname
+		   else netLoopbackAddress ()
+	  
+advice before (| #netConnect# |) ((s:Sock, addr:InetAddr, port:Int), st, name) =
+	      if checkConnect (st, netGetHostAddress addr, port)
+	      then (s, addr, port)
+	      else abort "Failed security check"
+
+(* LISTEN CHECKS *)
+advice before (| #netServerBind# |) ((s:ServSock,ia:InetAddr,port:Int,backlog:Int), st, name) =
+	      if checkListen (st, port)
+	      then (s, ia, port, backlog)
+	      else abort "Failed security check"
+	
+(* ACCEPT CHECKS *)
+advice after (| #netServerAccept# |) (sockiapopt:Option (Sock, InetAddr, Int), st, name) = 
+		   case sockiapopt of
+		       Some (sock, ia, port) =>  if checkAccept (st, netGetHostAddress ia, port)
+						 then Some (sock, ia, port)
+						 else abort "Failed security check"
+		     | None => None
+	  

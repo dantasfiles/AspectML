@@ -1,0 +1,20 @@
+(* AllPermission *)
+
+(* newAllPermission : string * string -> permission *)
+(* creates a new AllPermission *)
+fun newAllPermission (s1 : String, 
+		      s2 : String) : (String,List Arg) =
+    ("AllPermission", Nil:List Arg)
+
+(* impliesAllPermission : permission * permission -> Bool *)
+(* AllPermission implies all other permissions *)
+fun impliesAllPermission (p1 : (String,List Arg), 
+			  p2 : (String,List Arg)) : Bool = 
+    True
+
+fun intersectAllPermission (p1 : (String,List Arg), 
+			    p2 : (String,List Arg)) : Option (String,List Arg) =
+    Some p2
+
+(* add AllPermission to the permission list *)
+val _ = addPermission("AllPermission", newAllPermission, impliesAllPermission, intersectAllPermission)

@@ -1,0 +1,27 @@
+(* doPrivileged : (unit -> a) -> a *)
+(* passed a function f that is run on unit--used in the stack inspection mechanism *)
+fun doPrivileged f = f ()
+
+(* fun checkStack : stack * permission -> unit *)
+(* inspects the stack to ensure that all of the stack frames allow the permission *)
+fun checkStack (st, reqAction) =
+    case st of 
+	(* in case of a doPrivileged function, just make sure the immediate calling stack frame allows the permission *)
+	(| #doPrivileged# |)(_,_) :: (|any|)(_,info) :: _ => 
+	let
+	    val privFun = getFileName info
+	    val privFunPerms = getPermissions (privFun, policyfile)
+	in 
+ 	    impliesPermissions (privFunPerms, reqAction)
+	end
+      (* otherwise, check that the stack frame allows the permission, and recursively call stack inspection on the rest of the stack *)
+      | (|any|)(_,info) :: tail =>
+	let
+	    val currFun = getFileName info
+	    val currFunPerms = getPermissions (currFun, policyfile)
+	in 
+	    impliesPermissions (currFunPerms, reqAction)
+            andalso checkStack (tail, reqAction) 
+	end
+      | _ => True
+	 

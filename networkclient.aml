@@ -1,0 +1,12 @@
+fun test1 port =
+    let
+	val sockopt = netNewSocketHost (None, port)
+	val _ = print "connected\n"
+	val sock = case sockopt of 
+		       Some sock => sock
+		     | None => abort "error 1"
+	val _ = netSend(sock, "bob")
+	val _ = print "sent\n"
+    in 
+	()
+    end

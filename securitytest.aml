@@ -1,0 +1,67 @@
+fun id x = x
+fun id2 x = x
+fun id3 x = x
+fun id4 x = x
+fun id5 x = x
+fun id6 x = x
+fun id7 x = x
+
+fun test1 x = 
+    let 
+	val _ = print "logging debug info to good location \"tests/security/debug.txt\"\n"
+	val _ = print "this should be allowed\n"
+    in 
+	startLoggerFile (#id#, "tests/security/debug.txt")
+    end 
+
+
+fun test2 x =
+   let 
+       val _ = print "logging debug info to bad location \"private/debug.txt\"\n"
+	val _ = print "this should NOT be allowed"
+    in 
+	startLoggerFile (#id2#, "private/debug.txt")
+    end 
+
+fun test3 x =
+    let 
+	val _ = print "reading debug config info from default location\n"
+	val _ = print "this should be allowed\n"
+    in 
+	startLoggerConfig #id3#
+    end
+	
+
+fun test4 x =
+   let 
+	val _ = print "reading config info from good location \"tests/security/debug.config\"\n"
+	val _ = print "config says to log to good location \"tests/security/debug.txt\"\n"
+	val _ = print "this should be allowed\n"
+    in 
+       startLoggerConfigFile (#id4#, "tests/security/debug.config")
+    end
+
+fun test5 x =
+   let 
+	val _ = print "reading config info from bad location \"private/debug.config\"\n"
+	val _ = print "this should NOT be allowed\n"
+    in 
+	startLoggerConfigFile (#id5#, "private/debug.config")
+    end
+
+fun test6 x =
+   let 
+	val _ = print "reading config info from good location \"tests/security/debug.config\"\n"
+	val _ = print "config says to log to baddebug location \"private/debug.txt\"\n"
+	val _ = print "this should NOT be allowed\n"
+    in 
+	startLoggerConfigFile (#id6#, "tests/security/debug2.config")
+    end
+
+fun getTempFile (x:Unit):String =
+    "private/debug.txt"
+
+import "library/securitytest.aml";
+
+
+

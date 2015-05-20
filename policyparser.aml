@@ -1,0 +1,257 @@
+(* parses a policy file *)
+
+(* the cfg of a policy file
+PolicyFile -> PolicyEntry+
+PolicyEntry -> grant {PermissionEntry};
+  | grant SignerEntry {PermissionEntry};
+  | grant CodebaseEntry {PermissionEntry};
+  | grant PrincipalEntry {PermissionEntry};
+  | grant SignerEntry, CodebaseEntry {PermissionEntry};
+  | grant CodebaseEntry, SignerEntry {PermissionEntry};
+  | grant SignerEntry, PrincipalEntry {PermissionEntry};
+  | grant PrincipalEntry, SignerEntry {PermissionEntry};
+  | grant CodebaseEntry, PrincipalEntry {PermissionEntry};
+  | grant PrincipalEntry, CodebaseEntry {PermissionEntry};
+  | grant SignerEntry, CodebaseEntry, PrincipalEntry {PermissionEntry};
+  | grant CodebaseEntry, SignerEntry, PrincipalEntry {PermissionEntry};
+  | grant SignerEntry, PrincipalEntry, CodebaseEntry {PermissionEntry};
+  | grant CodebaseEntry, PrincipalEntry, SignerEntry {PermissionEntry};
+  | grant PrincipalEntry, CodebaseEntry, SignerEntry {PermissionEntry};
+  | grant PrincipalEntry, SignerEntry, CodebaseEntry {PermissionEntry};
+  | keystore "url"
+SignerEntry -> signedby (a comma-separated list of strings)
+CodebaseEntry -> codebase (a string representation of a URL)
+PrincipalEntry -> OnePrincipal | OnePrincipal, PrincipalEntry
+OnePrincipal -> principal [ principal_class_name ] "principal_name" (a principal)
+PermissionEntry -> OnePermission | OnePermission PermissionEntry
+OnePermission -> permission permission_class_name
+                 [ "target_name" ] [, "action_list"]
+                 [, SignerEntry];
+*)
+
+(*type codebase = String
+type policy = (Option codebase, List Perm)
+type policyfile = List policy*)
+
+(* internal representation for tokens *)
+datatype Token = GRANT : Token
+	       | COMMA : Token
+	       | LBRACE : Token
+	       | RBRACE : Token
+	       | STRING : String -> Token
+	       | CODEBASE : Token
+	       | SEMI : Token
+	       | EOF : Token
+	       | PERMISSION : Token
+	       | ID : String -> Token
+
+(* fun removeString : string ref -> string *)
+(* removes a string from the stream and returns it *)
+fun getString (s:String,i:Int):(String, Int) =
+    if (size s) == i
+    then ("",i)
+    else let 
+	    val c = (sub s) i
+	in 
+	    if c == #"\""
+	    then ("", i+1)
+	    else let
+		    val (s1,j) = getString (s, i+1)
+		in 
+		    ((str c) ^ s1, j)
+		end
+	end
+
+(* fun makeToken : string -> Token *)
+(* gets grant, codebase, permission, or id tokens off the stream *)
+fun makeToken (s:String):Token =
+    if "grant" == s
+    then GRANT
+    else (if "codebase" == s
+	  then CODEBASE
+	  else (if "permission" == s
+		then PERMISSION
+		else ID s))
+
+(* fun getId : string ref -> string *)
+(* gets an id off the stream *)
+fun getId (s:String,i:Int):(String,Int) = 
+    if ((size s) == i)
+    then ("",i)
+    else let
+	    val c = (sub s) i
+	in 
+	    if c == #" " orelse 
+	       c == #"\t" orelse
+	       c == #"\n" orelse
+	       c == #"," orelse 
+	       c == #";" orelse
+	       c == #"{" orelse
+	       c == #"}"
+	    then ("",i)
+	    else let
+		    val (s1,j) = getId (s, i+1)
+		in 
+		    ((str c) ^ s1, j)
+		end
+	end 
+
+(* fun getToken : string ref -> Token *)
+(* gets a token off the stream *)
+fun getToken (s:String, i:Int):(Token,Int) = 
+    if (size s) == i
+    then (EOF,i)
+    else
+	let
+	    val c = (sub s) i
+	in 
+	    if c == #" " orelse 
+	       c == #"\t" orelse 
+	       c == #"\n"
+	    then getToken (s, i+1)
+	    else (if c == #","
+		  then (COMMA, i+1)
+		  else (if c == #";"
+			then (SEMI, i+1)
+			else (if c == #"{"
+			      then (LBRACE, i+1)
+			      else (if c == #"}"
+				    then (RBRACE, i+1)
+				    else (if c == #"\""
+					  then let
+						  val (s1, j) = getString (s, i+1)
+					      in 
+						  (STRING s1, j)
+					      end
+					  else let 
+						  val (s1, j) = getId (s,i)
+					      in 
+						  (makeToken s1, j)
+					      end)))))
+    end
+	 
+(* fun printToken : Token -> string *)
+(* pretty-prints a token *)
+fun printToken (t:Token):String =
+    case t of
+	COMMA => ","
+      | GRANT => "grant"
+      | LBRACE => "{"
+      | RBRACE => "}"
+      | (STRING s) => "\"" ^ s ^ "\""
+      | CODEBASE => "codebase"
+      | SEMI => ";"
+      | EOF => "EOF"
+      | PERMISSION => "permission"
+      | (ID s) => s
+  
+(* fun parseSTRING : Token -> string *)
+(* makes sure the token is a string token and extracts that string *)
+fun parseSTRING (s:String, i:Int):(String,Int) =
+    case (getToken (s, i)) of
+	(STRING x, j) => (x, j)
+      | (t, _) => abort ("Expected string got " ^ printToken t)
+  
+(* fun parseRBRACE : Token -> unit *)
+(* makes sure the token is a right brace *)
+fun parseRBRACE (s:String, i:Int):Int =
+    case (getToken (s, i)) of 
+	(RBRACE, j) => j
+      | (t, _) => abort ("Expected } got " ^ printToken t)
+  
+(* fun parseSEMI : Token -> unit *)
+(* makes sure the token is a semicolon *)
+fun parseSEMI (s:String,i:Int):Int =
+    case (getToken (s,i)) of 
+	(SEMI, j) => j
+      | (t, _) => abort ("Expected ; got " ^ printToken t)
+  
+(* fun parseCOMMA : Token -> unit *)
+(* makes sure the token is a comma *)
+fun parseCOMMA (s:String,i:Int):Int =
+    case (getToken (s,i)) of 
+	(COMMA,j) => j
+      | (t,_) => abort ("Expected , got " ^ printToken t)
+ 
+(* fun parsePermArgs : string * string ref -> permission *)
+(* when passed the name of a permission and a stream, gets the options of the permission and calls the new permission function *)
+fun parsePermArgs (n:String, s:String, i:Int):((String,List Arg), Int) =
+    case (getToken (s,i)) of
+	(* for FilePermissions *)
+	(STRING s1, j) => let 
+	    val k = parseCOMMA (s, j)
+	    val (s2, l) = parseSTRING (s, k)
+	    val m = parseSEMI (s, l)
+ 	in
+	    (newPermission (n, s1, s2), m)
+	end
+      (* for NewPermissions *)
+      | (SEMI, j) => (newPermission (n, "",""), j)
+      | (t, _) => abort ("Expected permission args got " ^ printToken t)
+  
+(* fun parsePerm : string ref -> permission *)
+(* reads a permission from the stream *)
+fun parsePerm (s:String,i:Int):((String,List Arg), Int) =
+    case (getToken (s,i)) of
+	(ID name, j) => parsePermArgs (name, s, j)
+	| (t,_) => abort ("Expected permission type got " ^ printToken t)
+ 
+(* fun parsePermList : string ref -> permission list *)
+(* reads a list of permissions from the stream *)
+fun parsePermList (s:String,i:Int):(List (String,List Arg), Int) = 
+  case (getToken (s,i)) of
+      (* end of permission list *)
+	(RBRACE, j) => let 
+	    val k = parseSEMI (s,j)
+	in 
+	    (Nil, k)
+	end
+      | (PERMISSION, j) => let
+	    val (p, k) = parsePerm (s, j)
+	    val (ps, l) = parsePermList (s, k)
+	in 
+	    (p::ps, l)
+	end
+      | (t,_) => abort ("expected permission or } got " ^ printToken t)
+  
+(* fun parsePolicy : string option * string ref -> string option * permission list *)
+(* takes a possible codebase and a string, reads a permission list,  and returns a possible codebase and a permission list *)
+(* not streamlined but easier to add signer entry and principals later *)
+fun parsePolicy (cb:Option String, s:String, i:Int):(Option String, List (String,List Arg), Int) =
+    case (cb, getToken (s,i)) of
+	(* reads a codebase from the policy file *)
+	(None, (CODEBASE,j)) => let
+	    val (s',k) = parseSTRING (s,j)
+	in 
+	    parsePolicy (Some (s'), s, k)
+	end
+      (* reads the permission list *)
+      | (cb, (LBRACE,j)) =>
+	let 
+	    val (ps, k) = parsePermList (s, j)
+	in 
+	    (cb, ps, k)
+	end
+      | (_, (t,_)) => abort ("Expected codebase or { got " ^ printToken t)
+ 	 
+(* fun parsePolicyFile' : string ref -> (string option * permission list) list *)
+(* reads a list of policy file entries from the stream *)
+fun parsePolicyFile' (s:String,i:Int):(List (Option String, List (String,List Arg)), Int)  =
+    case (getToken (s,i)) of
+	(EOF,j) => (Nil, j)
+      | (GRANT,j) => let 
+	    val (b, ps, k) = parsePolicy (None, s, j)
+	    val (bps, l) = parsePolicyFile' (s, k)
+	in 
+	    ((b,ps)::bps,l)
+	end
+      | (t,_) => abort ("Expected EOF or grant got " ^ printToken t)
+ 
+(* fun parsePolicyFile : string -> string ref *)
+(* creates a stream from a string and calls the helper function *)
+fun parsePolicyFile (s:String) = 
+    let
+	val (bps, i) = parsePolicyFile' (s, 0)
+    in 
+	bps
+    end

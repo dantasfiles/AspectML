@@ -1,0 +1,49 @@
+codebase.aml
+permission.aml
+policyparser.aml
+allpermission.aml
+filepermission.aml
+security.aml
+filesecurity.aml
+
+
+
+permission set of stack is intersection of protec
+ion domains on stack
+
+When a piece of code calls the doPrivileged method (see below), the permission set of the stack is considered to include a permission if it is allowed by the said code's protection domain and by all protection domains that are called or entered directly or indirectly subsequently.
+
+
+grant permission to codebase in policy files
+
+check in actual code
+
+Permission p = new Permission...;
+AccessController.checkPermission(p);
+
+If any caller in the call chain does not have the requested permission, AccessControlException is thrown, unless the following is true -- a caller whose domain is granted the said permission has been marked as "privileged" (see the next section) and all parties subsequently called by this caller (directly or indirectly) all have the said permission.
+
+1) In an "eager evaluation" implementation, whenever a thread enters a new protection domain or exits from one, the set of effective permissions is updated dynamically.
+
+2) In a "lazy evaluation" implementation, whenever permission checking is requested, the thread state (as reflected by the current state, including the current thread's call stack or its equivalent) is examined and a decision is reached to either deny or grant the particular access requested.
+
+ i = m;
+ while (i > 0) {
+     if (caller i's domain does not have the permission)
+         throw AccessControlException
+     else if (caller i is marked as privileged) 
+         return;
+     i = i - 1;
+ };
+
+  somemethod() {
+       ...normal code here...
+       String user = (String) AccessController.doPrivileged(
+         new PrivilegedAction() {
+           public Object run() {
+               return System.getProperty("user.name");
+           }
+         }
+       );
+       ...normal code here...
+  }

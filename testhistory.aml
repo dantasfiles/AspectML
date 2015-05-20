@@ -1,0 +1,13 @@
+import "tests/security/networkserver.aml";
+
+fun test1 port = 
+    let
+	val _ = startServer port
+	val _ = print "STARTED SERVER 1\n"
+	val _ = fileOpenRead "tests/security/debug.config"
+	val _ = print "READ FILE\n"
+	val _ = startServer (port+1)
+	val _ = print "STARTED SERVER 2\n"
+    in 
+	()
+    end

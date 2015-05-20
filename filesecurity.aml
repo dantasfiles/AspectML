@@ -1,0 +1,54 @@
+(* starts the security mechanism to trigger on file io code *)
+
+(*val fileExecuteMask:Int = 1
+val fileWriteMask:Int = 2
+val fileReadMask:Int = 4
+val fileDeleteMask:Int = 8
+val fileAllMask:Int = fileExecuteMask orb fileWriteMask orb fileReadMask orb fileDeleteMask
+val fileNoneMask:Int = 0*)
+
+(* checkRead : stack * string  -> unit *)
+(* checks that the stack allows a read of the file *)
+fun checkRead (st,
+	       f : String) : Bool = 
+    checkStack (st, newFilePermissionMask (f, fileReadMask))
+
+(* checkWrite : stack * string -> unit *)
+(* checks that the stack allows a write to the file *)
+fun checkWrite (st, 
+		f : String) : Bool  =
+    checkStack (st, newFilePermissionMask (f, fileWriteMask))
+
+(* checkDelete : stack * string -> unit *)
+(* checks that the stack allows a delete of the file *)
+fun checkDelete (st, 
+		 f : String) : Bool =
+    checkStack (st, newFilePermissionMask (f, fileDeleteMask))
+
+(*** Read Checks ***)
+val readPC = #fileCanRead,fileExists,fileIsDirectory,fileIsFile,fileLastModified,fileLength,fileList,fileOpenRead#
+advice before (| readPC |) (arg, stk, _) = 
+    if checkRead (stk, arg)
+    then arg
+    else abort "Failed security check"
+
+(*** Write Checks ***)
+advice before (| #fileCanWrite,fileCreateNewFile,fileMkdir,fileOpenAppend,fileOpenWrite# |) (farg, fstk, fname) =
+    if checkWrite (fstk, farg)
+    then farg
+    else abort "Failed security check"
+
+advice before (| #fileRenameTo# |) (farg, fstk, fname) =
+	      let 
+		  val (farg1, farg2) = farg
+	      in 
+		  if (checkWrite (fstk, farg1)) andalso (checkWrite (fstk, farg2)) 
+		  then farg
+		  else abort "Failed security check"
+	      end
+
+(*** Delete Checks ***)
+advice before (| #fileDelete# |) (farg, fstk, fname) =
+	      if checkDelete (fstk, farg)
+	      then farg
+	      else abort "Failed security check"

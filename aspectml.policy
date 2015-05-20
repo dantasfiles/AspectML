@@ -1,0 +1,7 @@
+grant codebase "library/-" {
+	permission AllPermission;
+};
+
+grant codebase "tests/-" { permission SocketPermission "*", "listen accept";
+                           permission FilePermission "tests/-", "read write";};
+

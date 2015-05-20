@@ -1,0 +1,10 @@
+import "tests/security/codebase.aml";
+import "tests/security/permission.aml";
+import "tests/security/policyparser.aml";
+import "tests/security/allpermission.aml";
+import "tests/security/filepermission.aml";
+import "tests/security/socketpermission.aml";
+import "tests/security/policyfile.aml";
+import "tests/security/stackinspect.aml";
+import "tests/security/filesecurity.aml";
+import "tests/security/netsecurity.aml";

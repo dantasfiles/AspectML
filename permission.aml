@@ -1,0 +1,217 @@
+(* code that handles creating permissions andchecking whether one permission allows another *)
+
+(* Java permissions are of the following types: 
+  datatype Perm =
+	   (* located in allpermission.aml *)
+	 AllPerm : Perm  
+       (* located in filepermission.aml *)
+       | FilePerm : (Int, Bool, Bool, String) -> Perm
+       | SocketPerm
+       | NetPerm
+       | SecurityPerm
+       | RuntimePerm
+       | PropertyPerm
+       | AWTPerm
+       | ReflectPerm
+       | SerializablePerm *)
+
+(* used to package strings, tuples, ints, and bool in an options object *)
+datatype Arg = StringArg : String -> Arg
+	     | TupleArg : (List Arg) -> Arg
+	     | IntArg : Int -> Arg
+	     | BoolArg : Bool -> Arg
+	     | InetAddrArg : InetAddr -> Arg
+
+case-advice around (| #val_to_string# |) (x:Arg, st, fi):String =
+    case x of
+	StringArg s => val_to_string s
+      | TupleArg l => val_to_string l
+      | IntArg i => val_to_string i
+      | BoolArg b => val_to_string b
+      | InetAddrArg ia => val_to_string ia
+
+(*fun equalArg (a1, a2) =
+    case (a1, a2) of
+	(StringArg s1, StringArg s2) =>
+	s1 == s2
+      | (TupleArg a1s, TupleArg a2s) =>
+	equalArgs (a1s, a2s)
+      | (IntArg i1, IntArg i2) =>
+	i1 == i2
+      | (BoolArg b1, BoolArg b2) =>
+	b1 == b2
+      | (InetAddrArg ia1, InetAddrArg ia2) =>
+	netEquals (ia1, ia2)
+
+
+fun equalsArgs (a1s, a2s) =
+    case (a1s, a2s) of
+	(a1::a1s, a2::a2s) =>
+	equalArg (a1, a2) andalso equalArgs (a1s, a2s)
+      | (Nil, Nil) => True
+      | _ => False
+	
+fun equalsPerm (p1, p2):Bool =
+    case (p1,p2) of 
+	((n1, a1), (n2,a2)) =>
+	n1 == n2 andalso equalsArgs (a1, a2) *)
+
+fun unwrapArg x =
+    case x of
+	(InetAddrArg a) :: t => a ::(unwrapArg t)
+      | Nil => Nil
+      | _ => abort "unwrapArg: Should be impossible"
+	 
+(* a table containing the name of a permission in the policy file, a new function to create the permission, and an implies permission to determine if the permission implies another *)
+val permission_table = ref (Nil : List (String, (String,String) -> (String, List Arg) , ((String, List Arg), (String, List Arg)) -> Bool, ((String, List Arg), (String, List Arg)) -> Option (String, List Arg)))
+
+(* type permission = (String, List Arg) *)
+
+(* type permission_entry = (String, (String,String) -> Perm, (Perm,Perm) -> Bool) *)
+
+(* fun addPermission : permission_entry -> Unit *)
+(* adds a permission name, new function, and implies function to the permission_table *)
+fun addPermission (pe : (String, 
+			 (String,String) -> (String,List Arg), 
+			 ((String,List Arg), (String,List Arg)) -> Bool, 
+			 ((String,List Arg), (String,List Arg)) -> Option (String,List Arg))) : Unit =
+    permission_table := (pe::(!permission_table))
+
+(* fun arg_to_string : Arg -> String *)
+(* unwraps a value *)
+fun arg_to_string (arg : Arg) : String =
+    case arg of
+	StringArg s => s
+      | TupleArg _ => "[unprintable]"
+      | IntArg i => int_to_string i
+      | BoolArg b => bool_to_string b
+      | _ => abort "args_to_string: Should be impossible.\n"
+
+(* fun args_to_string : Arg list -> string *)
+(* unwraps a list of values *)
+fun args_to_string (args : List Arg) : String =
+    case args of
+	(arg::args) => (arg_to_string arg) ^ "," ^ (args_to_string args)
+      | Nil => ""
+
+(* perm_to_string : permission -> string *)
+(* pretty printing permissions *)
+fun perm_to_string (name : String,
+		    args : List Arg) : String = 
+    name ^ "(" ^ args_to_string args ^ ")"
+
+(* getPermissionName : permission -> string *)
+(* pretty-printing name of permission *)
+fun getPermissionName (p : (String,List Arg)) : String =
+    case p of
+	(n,_) => n
+      | _ => abort "getPermissionName: Should be impossible"
+
+(* getPermissionArgs : permission -> Arg list *)
+(* gets the internal structure of the permission *)
+fun getPermissionArgs (p : (String, List Arg)) : List Arg =
+    case p of
+	(_,a) => a
+      | _ => abort "getPermissionArgs: Should be impossible"
+
+(* getNamePermission : permission_entry -> string *)
+(* gets the name of the permission from the permission table *) 
+fun getNamePermission (pe : (String, 
+			     (String,String) -> (String,List Arg), 
+			     ((String,List Arg), (String,List Arg)) -> Bool, 
+			     ((String,List Arg), (String,List Arg)) -> Option (String,List Arg))) : String =
+    case pe of 
+	(n,_,_,_) => n
+      | _ => abort "getNamePermission: Should be impossible"
+
+(* getNewPermission : permission_entry -> (String,String) -> permission *)
+(* gets the new permission function of the permission from the permission table *) 
+fun getNewPermission (pe : (String, 
+			     (String,String) -> (String,List Arg), 
+			     ((String,List Arg), (String,List Arg)) -> Bool, 
+			     ((String,List Arg), (String,List Arg)) -> Option (String,List Arg))) : (String,String) -> (String,List Arg) =
+    case pe of 
+	(_,np,_,_) => np
+      | _ => abort "getNewPermission: Should be impossible."
+
+(* getImpliesPermission : permission_entry -> perm * perm -> bool *)
+(* gets the implies permission function of the permission from the permission table *)
+fun getImpliesPermission (pe : (String, 
+			     (String,String) -> (String,List Arg), 
+			     ((String,List Arg), (String,List Arg)) -> Bool, 
+			     ((String,List Arg), (String,List Arg)) -> Option (String,List Arg))) : ((String,List Arg), (String,List Arg)) -> Bool =
+    case pe of 
+	(_,_,ip,_) => ip
+      | _ => abort "getImpliesPermission: Should be impossible."
+
+fun getIntersectPermission (pe : (String, 
+			     (String,String) -> (String,List Arg), 
+			     ((String,List Arg), (String,List Arg)) -> Bool, 
+			     ((String,List Arg), (String,List Arg)) -> Option (String,List Arg))) : ((String,List Arg), (String,List Arg)) -> Option (String,List Arg) =
+    case pe of 
+	(_,_,_,ip) => ip
+      | _ => abort "getIntersectPermission: Should be impossible."
+
+(* getPermissionEntry' : string * permission_entry list -> permission_entry *)
+(* helper function for finding a permission_entry from the permission table *)
+fun getPermissionEntry' (name : String, 
+			 pes : List (String, 
+				     (String,String) -> (String,List Arg), 
+				     ((String,List Arg), (String,List Arg)) -> Bool, 
+				     ((String,List Arg), (String,List Arg)) -> Option (String,List Arg))) =
+    case pes of
+	(pe::pes) => if name == getNamePermission pe
+		     then pe
+		     else getPermissionEntry' (name, pes)
+      | Nil => abort ("Permission " ^ name ^ " not found.\n")
+
+(* getPermissionEntry : string -> permission_entry *)
+(* finds a permission_entry from the permission table *)
+fun getPermissionEntry (name : String) =
+    getPermissionEntry' (name, !permission_table)
+
+(* fun newPermission : string * string * string -> permission *)
+(* takes the name of the permission and option strings 1 and 2, looks up the permission in the permission table, and creates a new permission *)
+fun newPermission (name : String, 
+		   s1 : String, 
+		   s2 : String) : (String,List Arg)  =
+    (getNewPermission (getPermissionEntry name)) (s1, s2)
+    
+(* fun impliesPermission : permission * permission -> bool *)
+(* takes two permissions, looks up the first permission in the permission table, and calls the proper imples function *)
+fun impliesPermission (p1 : (String,List Arg), 
+		       p2 : (String,List Arg)) : Bool =
+    (getImpliesPermission (getPermissionEntry (getPermissionName p1))) (p1, p2)
+    
+(* impliesPermissions  : permission list * permission -> bool *)
+(* takes a list of permissions and another permision, and calls the implies function on each of the first lists's permissions with the second permision *)
+fun impliesPermissions (ps : List (String,List Arg), 
+			p : (String, List Arg)) : Bool =
+    case ps of 
+	(p'::ps') => ((impliesPermission (p', p)) orelse (impliesPermissions (ps', p)))
+      | Nil => False
+
+
+fun intersectPermission (p1 : (String,List Arg), 
+			 p2 : (String,List Arg)) : Option (String,List Arg) =
+
+(*let val _ = print (perm_to_string p1 ^ " ^ " ^ perm_to_string p2)
+val p3opt = *)
+    (getIntersectPermission (getPermissionEntry (getPermissionName p1))) (p1, p2) 
+(*val _ =  case p3opt of Some p3 => print (" = " ^ perm_to_string p3 ^ "\n") | None => print "none\n"
+in 
+p3opt
+end*)
+    
+fun intersectPermissions' (p1 : (String,List Arg), ps2 : List (String,List Arg)) : List (String,List Arg) =
+    case ps2 of 
+	(p2::ps2') => (case intersectPermission (p1,p2) of 
+			   Some p3 => p3::(intersectPermissions' (p1, ps2'))
+			 | None => intersectPermissions' (p1, ps2'))
+      | Nil => Nil
+
+fun intersectPermissions (ps1 : List (String,List Arg), ps2 : List (String,List Arg)) : List (String,List Arg) =
+    case ps1 of 
+	(p::ps) => listConcat (intersectPermissions' (p, ps2), 
+			       intersectPermissions (ps,ps2))
+      | Nil => Nil

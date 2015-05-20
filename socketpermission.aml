@@ -1,0 +1,257 @@
+val sockPermConnectMask:Int = 1
+val sockPermListenMask:Int = 2
+val sockPermAcceptMask:Int = 4
+val sockPermResolveMask:Int = 8
+val sockPermNoneMask:Int = 0
+val sockPermAllMask:Int = sockPermConnectMask orb sockPermListenMask orb sockPermAcceptMask orb sockPermResolveMask
+
+val sockPermPortMin:Int = 0
+val sockPermPortMax:Int = 65535
+val sockPermPrivPortMax:Int = 1023
+
+fun sockPermParsePort (port:String):(Int,Int) =
+    if (port == "") orelse (port == "*")
+    then (sockPermPortMin, sockPermPortMax)
+    else let 
+	    val dash = indexOf (port, "-")
+	in 
+	    if (dash == ~1)
+	    then let 
+		    val p = string_to_int port
+		in 
+		    (p, p)
+		end
+	    else let 
+		    val low = substring (port, 0, dash)
+		    val high = substringEnd (port, dash+1)
+		    val l = if low == "" 
+			    then sockPermPortMin 
+			    else string_to_int "low"
+		    val h = if high == ""
+			    then sockPermPortMax 
+			    else string_to_int "high"
+		in 
+		    (l, h)
+		end 
+	end
+
+fun sockPermInit (host:String, maskarg:Int) =
+   let 
+       val trustProxy:Bool = True
+       val mask:Int = maskarg orb sockPermResolveMask 
+       val sep:Int = indexOf (host, ":")
+       val hostname:String = (if (sep != ~1)
+		       then substring (host, 0, sep)
+		       else host)
+       val (lowport:Int, highport:Int) = 
+	   if (sep != ~1) 
+	   then sockPermParsePort (substringEnd (host, sep+1))
+	   else (sockPermPortMin, sockPermPortMax)
+       val wildcard:Bool = if (isPrefix ("*", hostname))
+		      then True
+		      else False
+       val ch:Int = if (isPrefix ("*", hostname))
+		then 0 
+		else (if (size host) > 0 
+		      then (sub hostname) 0
+		      else 0)
+       val init_with_ip:Bool = if (isPrefix ("*", hostname))
+			  then False
+			  else ((size host) > 0) andalso ((charDigit ch) != ~1)
+       val (initAddress:Option InetAddr, invalid1:Bool) = if init_with_ip
+				     then (case getByAddr host of 
+					       Some addr => (Some addr, False)
+					     | None => (None, True))
+				     else (None, False)
+       (* getIP *)
+       val (addresses:List InetAddr, invalid2:Bool) = 
+	   if invalid1 orelse wildcard
+	   then (Nil, invalid1)
+	   else (case initAddress of
+		     None => (case (netGetAllByName hostname) of
+				  None => (Nil, True)
+				| Some newaddresses => ((listGetFirst newaddresses)::Nil, False))
+		   | Some addr => (addr::Nil, False))
+       val initcname = if (isPrefix ("*", hostname))
+		       then (if hostname == "*"
+			     then Some ""
+			     else Some (stringToLowerCase (substringEnd (hostname, 1))))
+		       else None
+(* need to clean up here once find out what can throw exception *)
+       (* getCanonicalName *)
+       val (cname:String, invalid3:Bool) = 
+	   if invalid2 
+	   then ("", invalid2)
+	   else (case initcname of
+		   Some cname => (cname, invalid2)
+		 | None => (if init_with_ip
+			    then (stringToLowerCase (netGetHostName (listGetFirst addresses)), False)
+			    else (case netGetByName (netGetHostAddress (listGetFirst addresses)) of
+				     Some addr => (stringToLowerCase (netGetHostName addr), False)
+				   | None => ("", True))))
+   in 
+       ("SocketPermission", (IntArg mask)::
+			    (StringArg hostname)::
+			    (StringArg cname)::
+			    (TupleArg (listMap ((fn(x) => InetAddrArg x), addresses)))::
+			    (BoolArg wildcard)::
+			    (BoolArg init_with_ip)::
+			    (BoolArg invalid3)::
+			    (IntArg lowport)::
+			    (IntArg highport)::
+			    (BoolArg trustProxy)::
+			    Nil)
+   end
+
+fun sockPermGetHost (host:String):String =
+    if host == ""
+    then "localhost"
+    else host
+
+fun newSocketPermissionMask (host:String, mask:Int) =
+    sockPermInit (sockPermGetHost host, mask)
+
+fun sockPermGetMask (c : String, 
+	     i : Int,
+	     mask : Int) : Int =
+     if (i < 0) 
+    then mask
+    else (if ((((sub c) i) == #" ") orelse
+	      (((sub c) i) == #"\r") orelse
+	      (((sub c) i) == #"\n") orelse
+	      (((sub c) i) == #"\f") orelse
+	      (((sub c) i) == #"\t"))
+	  then sockPermGetMask (c, i-1, mask)
+	  (* mask string contains "read" *)
+	  else (if ((i >= 6) andalso 
+		    ((((sub c) (i-6)) == #"c") orelse 
+		     (((sub c) (i-6)) == #"C")) andalso
+		    ((((sub c) (i-5)) == #"o") orelse 
+		     (((sub c) (i-5)) == #"O")) andalso
+		    ((((sub c) (i-4)) == #"n") orelse 
+		     (((sub c) (i-4)) == #"N")) andalso
+		    ((((sub c) (i-3)) == #"n") orelse 
+		     (((sub c) (i-3)) == #"N")) andalso
+		    ((((sub c) (i-2)) == #"e") orelse
+		     (((sub c) (i-2)) == #"E")) andalso
+		    ((((sub c) (i-1)) == #"c") orelse
+		     (((sub c) (i-1)) == #"C")) andalso
+		    ((((sub c) i) == #"t") orelse
+		     (((sub c) i) == #"T")))
+		then sockPermGetMask (c, i - 7, 
+			      mask orb sockPermConnectMask)
+		else (if ((i >= 6) andalso 
+			  ((((sub c) (i-6)) == #"r") orelse 
+			   (((sub c) (i-6)) == #"R")) andalso
+			  ((((sub c) (i-5)) == #"e") orelse 
+			   (((sub c) (i-5)) == #"E")) andalso
+			  ((((sub c) (i-4)) == #"s") orelse 
+			   (((sub c) (i-4)) == #"S")) andalso
+			  ((((sub c) (i-3)) == #"o") orelse 
+			   (((sub c) (i-3)) == #"O")) andalso
+			  ((((sub c) (i-2)) == #"l") orelse
+			   (((sub c) (i-2)) == #"L")) andalso
+			  ((((sub c) (i-1)) == #"v") orelse
+			   (((sub c) (i-1)) == #"V")) andalso
+			  ((((sub c) i) == #"e") orelse
+			   (((sub c) i) == #"E")))
+		      then sockPermGetMask (c, i - 7, 
+				    mask orb sockPermResolveMask)
+		      else (if ((i >= 5) andalso 
+				((((sub c) (i-5)) == #"l") orelse 
+				 (((sub c) (i-5)) == #"L")) andalso
+				((((sub c) (i-4)) == #"i") orelse 
+				 (((sub c) (i-4)) == #"I")) andalso
+				((((sub c) (i-3)) == #"s") orelse 
+				 (((sub c) (i-3)) == #"S")) andalso
+				((((sub c) (i-2)) == #"t") orelse
+				 (((sub c) (i-2)) == #"T")) andalso
+				((((sub c) (i-1)) == #"e") orelse
+				 (((sub c) (i-1)) == #"E")) andalso
+				((((sub c) i) == #"n") orelse
+				 (((sub c) i) == #"N")))
+			    then sockPermGetMask (c, i - 6, 
+					  mask orb sockPermListenMask)
+			    else (if ((i >= 5) andalso 
+				      ((((sub c) (i-5)) == #"a") orelse 
+				       (((sub c) (i-5)) == #"A")) andalso
+				      ((((sub c) (i-4)) == #"c") orelse 
+				       (((sub c) (i-4)) == #"C")) andalso
+				      ((((sub c) (i-3)) == #"c") orelse 
+				       (((sub c) (i-3)) == #"C")) andalso
+				      ((((sub c) (i-2)) == #"e") orelse
+				       (((sub c) (i-2)) == #"E")) andalso
+				      ((((sub c) (i-1)) == #"p") orelse
+				       (((sub c) (i-1)) == #"P")) andalso
+				      ((((sub c) i) == #"t") orelse
+				       (((sub c) i) == #"T")))
+				  then sockPermGetMask (c, i - 6, 
+						mask orb sockPermAcceptMask)
+			    else sockPermNoneMask)))))
+
+fun newSocketPermission (host:String, action:String) = 
+    sockPermInit (sockPermGetHost host, sockPermGetMask (action, (size action) - 1, sockPermNoneMask))
+    
+fun inProxyWeTrust (hostname1:String, hostname2:String):Bool =
+    if hostname1 == ""
+    then False
+    else equalsIgnoreCase(hostname1, hostname2)
+
+fun impliesSockPermIgnoreMask (mask1:Int, hostname1:String, cname1:String, addresses1:List InetAddr, wildcard1:Bool, init_with_ip1:Bool, invalid1:Bool, lowport1:Int, highport1:Int, trustproxy1:Bool, mask2:Int, hostname2:String, cname2:String, addresses2:List InetAddr, wildcard2:Bool, init_with_ip2:Bool, invalid2:Bool, lowport2:Int, highport2:Int, trustproxy2:Bool):Bool =
+    if ((mask2 andb sockPermResolveMask) != mask2) andalso ((lowport2 < lowport1) orelse (lowport2 > lowport2))
+    then False
+    else (if wildcard1 andalso ("" ==  cname1)
+	  then True
+	  else (if invalid1 orelse invalid2
+		then (if trustproxy1
+		      then inProxyWeTrust (hostname1, hostname2)
+		      else False)
+		else (if init_with_ip1
+		      then (if wildcard2
+			    then False
+			    else (if init_with_ip2
+				  then (listGetFirst addresses1) == (listGetFirst addresses2)
+				  else listExists (fn (address2) => (listGetFirst addresses1) == address2, addresses2)))
+		      else (if wildcard1 orelse wildcard2
+			    then (if wildcard1 andalso wildcard2
+				  then isSuffix (cname1, cname2)
+				  else (if wildcard2
+					then False
+					else isSuffix(cname1, cname2)))
+			    else (if listExists (fn (address1) => listExists (fn (address2) => address1 == address2, addresses2), addresses1)
+				  then True
+				  else equalsIgnoreCase(cname1, cname2))))))
+	
+fun impliesSocketPermission (p1, p2):Bool =
+  if getPermissionName p1 == getPermissionName p2
+    then (case (getPermissionArgs p1, getPermissionArgs p2) of
+	    ((IntArg mask1)::(StringArg hostname1)::(StringArg cname1)::(TupleArg addresses1)::(BoolArg wildcard1)::(BoolArg init_with_ip1)::(BoolArg invalid1)::(IntArg lowport1)::(IntArg highport1)::(BoolArg trustproxy1)::Nil,
+	     (IntArg mask2)::(StringArg hostname2)::(StringArg cname2)::(TupleArg addresses2)::(BoolArg wildcard2)::(BoolArg init_with_ip2)::(BoolArg invalid2)::(IntArg lowport2)::(IntArg highport2)::(BoolArg trustproxy2)::Nil) => 
+ 	    ((mask1 andb mask2) == mask2) andalso 
+	    impliesSockPermIgnoreMask (mask1, hostname1, cname1, unwrapArg addresses1, wildcard1, init_with_ip1, invalid1, lowport1, highport1, trustproxy1, mask2, hostname2, cname2, unwrapArg addresses2, wildcard2, init_with_ip2, invalid2, lowport2, highport2, trustproxy2))
+  else False
+
+
+fun intersectSocketPermission (p1, p2) = None
+(*fun intersectSocketPermission (p1 : (String,List Arg), 
+			       p2 : (String,List Arg)) : Option (String,List Arg) =
+    if equals (getPermissionName p2, "AllPermission")
+    then Some p1
+    else (if equals (getPermissionName p1, getPermissionName p2)
+	  then (case (getPermissionArgs p1, getPermissionArgs p2) of
+		    ((IntArg mask1)::(StringArg hostname1)::(StringArg cname1)::(TupleArg addresses1)::(BoolArg wildcard1)::(BoolArg init_with_ip1)::(BoolArg invalid1)::(IntArg lowport1)::(IntArg highport1)::(BoolArg trustproxy1)::Nil,
+		     (IntArg mask2)::(StringArg hostname2)::(StringArg cname2)::(TupleArg addresses2)::(BoolArg wildcard2)::(BoolArg init_with_ip2)::(BoolArg invalid2)::(IntArg lowport2)::(IntArg highport2)::(BoolArg trustproxy2)::Nil) => 
+		    let 
+			val mask3 = mask1 andb mask2
+			val wildcard3 = wildcard1 andalso wildcard2
+			val init_with_ip3 = init_with_ip1 orelse init_with_ip2
+			val invalid3 = invalid1 orelse invalid2
+			val lowport3 = max (lowport1, lowport2)
+			val highport3 = min (highport1, highport2)
+			val trustproxy3 = True
+		    in 
+
+		    end))
+		*)	
+
+val _ = addPermission("SocketPermission", newSocketPermission, impliesSocketPermission, intersectSocketPermission)

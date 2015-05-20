@@ -1,0 +1,18 @@
+fun startServer port =
+    let
+	val servsockopt = netNewServerSocketPort port
+	val _ = print "created socket\n"
+	val servsock = case servsockopt of 
+			   Some servsock => servsock
+			 | None => abort "*************error 1**********\n"
+	val sockiaiopt = netServerAccept servsock
+	val _ = print "accepted connection\n"
+	val (sock, ia, i) = case sockiaiopt of
+				Some (sock, ia, i) => (sock, ia, i)
+			      | None => abort "**********error 3************\n"
+	val s = netRecv (sock, 3)
+	val _ = print (s ^ "\n")
+    in 
+	()
+    end
+

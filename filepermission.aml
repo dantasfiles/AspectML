@@ -1,0 +1,250 @@
+(* FilePermissions *)
+
+(* the masks used in the internal representation of FilePermissions *)
+val fileExecuteMask = 1
+val fileWriteMask = 2
+val fileReadMask = 4
+val fileDeleteMask = 8
+val fileAllMask = fileExecuteMask orb fileWriteMask orb fileReadMask orb fileDeleteMask
+val fileNoneMask = 0
+
+(* entire directory recursively *)
+val fileRecursiveChar = #"-"
+(* entire directory non-recursively *)
+val fileWildChar = #"*"
+(* file separator *)
+val fileSeparatorChar = #"/"
+
+(* newFilePerm : string * int -> permision *)
+(* creates a new FilePermission when passed the path and the option mask *)
+fun newFilePermissionMask (cpath : String,
+			   mask : Int) : (String,List Arg) =
+    if ((mask andb fileAllMask) != mask) orelse (mask == fileNoneMask)
+    then abort "FilePermission mask error"
+    else (if cpath == "<<ALL FILES>>"
+	  then ("FilePermission", (IntArg mask)::(BoolArg True)::(BoolArg True)::(StringArg "")::Nil)
+	  else let
+		  val len = size cpath
+		  val last = (if (len > 0)
+			      then (sub cpath) (len - 1)
+			      else 0)
+		  (* determine whether path is a directory and whether it is recursive *)
+		  val (directory, recursive, cpath') = 
+		      if (last == fileRecursiveChar) andalso 
+			 ((len == 1) orelse 
+			  (((sub cpath) (len - 2)) == fileSeparatorChar))
+		      then (True, True, substring (cpath, 0, len - 1))
+		      else (if (last == fileWildChar) andalso
+			       ((len == 1) orelse
+				(((sub cpath) (len - 2)) == fileSeparatorChar))
+			    then (True, False, substring (cpath, 0, len - 1))
+			    else (False, False, cpath))
+		 (* val cpath'' = if ((size cpath') == 0)
+				then (getDir ())
+				else cpath'*)
+		  (* Java does some canonicalization here *)
+		  (*val cpath''' = cpath'*) (* CANONICALIZE HERE? *)
+		  (* add file seperator char at end if necessary *)
+		  val cpath'''' = if directory andalso 
+			       (((size cpath') == 0) orelse 
+				(((sub cpath') ((size cpath')-1)) != fileSeparatorChar))
+			    then (cpath' ^ (str fileSeparatorChar))
+			    else cpath'
+	      in
+		  (* construct actual FilePermission object *)
+		  ("FilePermission", (IntArg mask)::(BoolArg directory)::(BoolArg recursive)::(StringArg cpath'''')::Nil)
+	      end)
+
+(* getMask : string * int * int -> int *)
+(* parses file read/write/delete string to get mask number *)
+fun getMask (c : String, 
+	     i : Int,
+	     mask : Int) : Int =
+   (* let val _ = print (" " ^ (int_to_string i)) in*)
+    if (i < 0) 
+    then mask
+    else (if ((((sub c) i) == #" ") orelse
+	      (((sub c) i) == #"\r") orelse
+	      (((sub c) i) == #"\n") orelse
+	      (((sub c) i) == #"\f") orelse
+	      (((sub c) i) == #"\t"))
+	  then getMask (c, i-1, mask)
+	  (* mask string contains "read" *)
+	  else (if ((i >= 3) andalso 
+		    ((((sub c) (i-3)) == #"r") orelse 
+		     (((sub c) (i-3)) == #"R")) andalso
+		    ((((sub c) (i-2)) == #"e") orelse
+		     (((sub c) (i-2)) == #"E")) andalso
+		    ((((sub c) (i-1)) == #"a") orelse
+		     (((sub c) (i-1)) == #"A")) andalso
+		    ((((sub c) i) == #"d") orelse
+		     (((sub c) i) == #"D")))
+		then getMask (c, i - 4, 
+			      mask orb fileReadMask)
+		(* mask string contains "write" *)
+		else (if ((i >= 4) andalso 
+			  ((((sub c) (i-4)) == #"w") orelse 
+			   (((sub c) (i-4)) == #"W")) andalso
+			  ((((sub c) (i-3)) == #"r") orelse 
+			   (((sub c) (i-3)) == #"R")) andalso
+			  ((((sub c) (i-2)) == #"i") orelse
+			   (((sub c) (i-2)) == #"I")) andalso
+			  ((((sub c) (i-1)) == #"t") orelse
+			   (((sub c) (i-1)) == #"T")) andalso
+			  ((((sub c) i) == #"e") orelse
+			   (((sub c) i) == #"E")))
+		      then getMask (c, i - 5, 
+				    mask orb fileWriteMask)
+		      (* mask string contains "delete" *)
+		      else (if ((i >= 5) andalso 
+				((((sub c) (i-5)) == #"d") orelse 
+				 (((sub c) (i-5)) == #"D")) andalso
+				((((sub c) (i-4)) == #"e") orelse 
+				 (((sub c) (i-4)) == #"E")) andalso
+				((((sub c) (i-3)) == #"l") orelse 
+				 (((sub c) (i-3)) == #"L")) andalso
+				((((sub c) (i-2)) == #"e") orelse
+				 (((sub c) (i-2)) == #"E")) andalso
+				((((sub c) (i-1)) == #"t") orelse
+				 (((sub c) (i-1)) == #"T")) andalso
+				((((sub c) i) == #"e") orelse
+				 (((sub c) i) == #"E")))
+			    then getMask (c, i - 6, 
+					  mask orb fileDeleteMask)
+			    else fileNoneMask))))
+(*	end*)
+
+(* newFilePermission : string * string -> permission *)
+(* creates a FilePermission from the path and read/write/delete option string *)
+fun newFilePermission (f : String,
+		       c : String) : (String,List Arg) = 
+    let 
+	val mask = getMask (c, (size c) - 1, fileNoneMask)
+    in 
+	newFilePermissionMask (f, mask)
+    end
+
+(* filePermissionImpliesIgnoreMask : (bool * bool * string) * (bool * bool * string) -> bool *)
+(* takes two FilePermissions and determines whether the second is allowed by the first *)
+fun filePermissionImpliesIgnoreMask (d1 : Bool, 
+				     r1 : Bool, 
+				     f1 : String, 
+				     d2 : Bool, 
+				     r2 : Bool, 
+				     f2 : String) : Bool = 
+    (* first is directory *)
+    if d1
+    then (if r1
+	  (* first is recursive directory *)
+	  then (if d2
+		(* first is recursive directory and second is directory *)
+		then (((size f2) >= (size f1)) andalso 
+		  isPrefix (f1, f2))
+		(* first is recursive directory and second is file *)
+		else (((size f2) > (size f1)) andalso
+		      isPrefix (f1, f2)))
+	  (* first is non-recursive directory *)
+	  else (if d2
+		(* first is non-recursive directory and second is directory *)
+		then (if r2
+		      (* first is non-recursive directory and second is recursive directory *)
+		      then False
+		      (* first is non-recursive directory and second is non-recursive directory *)
+		      else f1 == f2)
+		(* first is non-recursive directory and second is file *)
+		else (let 
+			  val last = lastIndexOf (f2, str fileSeparatorChar) 
+		      in 
+			  if (last == ~1) 
+			  then False
+			  else (((size f1) == (last + 1)) andalso
+				((substring (f1, 0, last+1)) == (substring (f2, 0, last+1))))
+		      end)))
+    (* first is file *)
+    else f1 == f2
+
+(* impliesFilePermission : permission * permission -> bool *)
+(* decides whether the second FilePermission is allowed by the first *)
+fun impliesFilePermission (p1 : (String,List Arg), 
+			   p2 : (String,List Arg)) : Bool =
+    (*let val _ = print ("does " ^ (perm_to_string p1) ^ " imply " ^ (perm_to_string p2) ^ "\n")  in*)
+    (* checks that they are both FilePermissions *)
+    if (getPermissionName p1) == (getPermissionName p2)
+    then (case (getPermissionArgs p1, getPermissionArgs p2) of
+	      (* breaks the permissions down into their component read/write/delete masks, isDirectory flags, isRecursiveDirectory flags, and paths *)
+	      ((IntArg mask1)::(BoolArg d1)::(BoolArg r1)::(StringArg f1)::Nil, 
+	       (IntArg mask2)::(BoolArg d2)::(BoolArg r2)::(StringArg f2)::Nil) => 
+	      (* checks that the second read/write/delete mask is allowed by the first *)
+	      (((mask1 andb mask2) == mask2) andalso 
+	       (* checks that the second path is allowed by the first *)
+	       filePermissionImpliesIgnoreMask (d1,r1,f1,d2,r2,f2))
+	    | _ => abort "impliesFilePermission: Should be impossible")
+    else False
+(*end*)
+
+
+fun intersectFilePermission (p1 : (String,List Arg), 
+			   p2 : (String,List Arg)) : Option (String,List Arg) =
+    if (getPermissionName p2) == "AllPermission"
+    then Some p1
+    else (if (getPermissionName p1) == (getPermissionName p2)
+	  then (case (getPermissionArgs p1, getPermissionArgs p2) of
+	      ((IntArg mask1)::(BoolArg d1)::(BoolArg r1)::(StringArg f1)::Nil, 
+	       (IntArg mask2)::(BoolArg d2)::(BoolArg r2)::(StringArg f2)::Nil) => 
+	      let
+		  val mask3 = mask1 andb mask2
+		  val d3 = d1 andalso d2
+		  val r3 = r1 andalso r2
+		  val (d1',r1',f1') = if ((size f1) <= (size f2))
+			    then (d1,r1,f1)
+			    else (d2,r2,f2)
+		  val (d2',r2',f2') = if ((size f1) <= (size f2))
+			    then (d2,r2,f2)
+			    else (d1,r1,f1)
+		  val f3opt =  
+		      if mask3 == fileNoneMask
+		      then None
+		      else (if d1'
+			    then (if r1'
+				  then (if d2'
+					then (if (((size f2') >= (size f1')) andalso 
+						  isPrefix (f1', f2'))
+					      then Some f2'
+					      else None)
+					else (if (((size f2') > (size f1')) andalso
+						  isPrefix (f1', f2'))
+					      then Some f2'
+					      else None))
+				  else (if d2'
+					then (if r2'
+					      then None
+					      else (if f1' == f2'
+						    then Some f2'
+						    else None))
+					else (let 
+						  val last = lastIndexOf (f2', str fileSeparatorChar) 
+					      in 
+						  if (last == ~1) 
+						  then None
+						  else (if (((size f1') == (last + 1)) andalso
+							    ((substring (f1', 0, last+1)) ==( substring (f2', 0, last+1))))
+							then Some f2'
+							else None)
+					      end)))
+			    else (if f1' == f2'
+				  then Some f2'
+				  else None))
+	      in 
+		  case f3opt of
+		      Some f3 => 
+                      Some (getPermissionName p1, 
+                       (IntArg mask3)::(BoolArg d3)::(BoolArg r3)::(StringArg f3)::Nil)
+		    | None => None
+	      end
+	    | _ => abort "intersectFilePermission: Should be impossible\n")
+	  else None)
+
+
+
+(* add the file permission to the security mechanism *)
+val _ = addPermission("FilePermission", newFilePermission, impliesFilePermission, intersectFilePermission)

@@ -1,0 +1,2 @@
+(* instantiates the debugger on the security mechanism *)
+val _ = startLogger (#checkListen, checkAccept, checkConnect, shouldCheck, impliesSockPermIgnoreMask, impliesSocketPermission : (<a b> a~>b)#)

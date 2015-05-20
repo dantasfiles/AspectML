@@ -1,0 +1,30 @@
+(*type codebase = string
+type policy = codebase option * perm list 
+type policyfile = policy list *)
+
+(* policyfile : policyfile *)
+val policyfile : List (Option String, List (String,List Arg))  = 
+    let 
+	val pfname = "tests/security/aspectml.policy"
+	val pflength = fileLength pfname
+	val pfdesc = fileOpenRead pfname
+	val pfstring = fileRead (pfdesc, pflength)
+    in 
+	parsePolicyFile pfstring
+    end
+
+(* getPermissions : string * policyfile -> permission list *)
+(* given a path and a policyfile, returns a list of permissions who have a codebase that contains the path *)
+fun getPermissions (f : String, 
+		    pf : List (Option String, List (String,List Arg))) : List (String,List Arg) = 
+    case pf of 
+	((cbo, ps)::pes) => 
+	(case cbo of 
+	     (* policyfile entry does not have a codebase *)
+	     None => listConcat (ps, (getPermissions (f, pes)))
+	   | Some cb => if impliesCodeBase (cb, f)
+			(* path is in codebase *)
+			then listConcat (ps, (getPermissions (f, pes)))
+			else getPermissions (f, pes))
+      | Nil => Nil
+      | _ => abort "getPermissions: Should be impossible."
