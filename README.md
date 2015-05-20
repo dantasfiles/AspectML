@@ -1,0 +1,1 @@
+This is the language interpreter for the paper "AspectML: A Polymorphic Aspect-oriented Functional Programming Language" by Daniel S. Dantas, David Walker, Geoffrey Washburn & Stephanie Weirich, presented at ACM Transactions on Programming Languages & Systems
