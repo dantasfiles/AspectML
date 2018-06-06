@@ -1,4 +1,4 @@
-This is the security case study for the paper *AspectML: A Polymorphic Aspect-oriented Functional Programming Language* by Daniel S. Dantas, David Walker, Geoffrey Washburn & Stephanie Weirich, published at ACM Transactions on Programming Languages & Systems
+This is the security case study for the paper *AspectML: A Polymorphic Aspect-oriented Functional Programming Language* by Daniel S. Dantas, David Walker, Geoffrey Washburn & Stephanie Weirich, published at ACM Transactions on Programming Languages & Systems 
 
 https://dl.acm.org/citation.cfm?id=1353448
 
